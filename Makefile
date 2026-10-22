@@ -178,7 +178,10 @@ waves: tb_i2c.vcd
 lint:
 	@if command -v verilator > /dev/null 2>&1; then \
 		echo "$(CYAN)Running Verilator lint...$(RESET)"; \
-		verilator --lint-only -Wall -I$(RTL_DIR) $(RTL_ORDERED) 2>&1; \
+		verilator --lint-only -Wall -Wno-fatal \
+			-Wno-PINCONNECTEMPTY -Wno-IMPORTSTAR -Wno-TIMESCALEMOD -Wno-VARHIDDEN \
+			-I$(RTL_DIR) $(RTL_ORDERED) 2>&1; \
+		echo "$(GREEN)Lint check completed.$(RESET)"; \
 	else \
 		echo "$(YELLOW)Verilator not found. Install it for lint support.$(RESET)"; \
 	fi

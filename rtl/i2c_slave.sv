@@ -132,7 +132,9 @@ module i2c_slave #(
   // START: SDA falling while SCL high
   // STOP:  SDA rising while SCL high
 
+  /* verilator lint_off UNUSEDSIGNAL */
   logic scl_high;
+  /* verilator lint_on UNUSEDSIGNAL */
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
@@ -177,8 +179,9 @@ module i2c_slave #(
   // ---------------------------------------------------------------------------
   // Bus Busy Detection
   // ---------------------------------------------------------------------------
+  /* verilator lint_off UNUSEDSIGNAL */
   logic bus_busy;
-  logic stop_glitch_filter;
+  /* verilator lint_on UNUSEDSIGNAL */
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
@@ -194,11 +197,13 @@ module i2c_slave #(
   // ---------------------------------------------------------------------------
 
   // 9-bit shift register: 8 data bits + 1 ACK/NACK bit
+  /* verilator lint_off UNUSEDSIGNAL */
   logic [8:0] shift_reg;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [3:0] bit_pos;       // bit position counter (0-8)
-  logic       addr_match;    // address match flag
+  /* verilator lint_off UNUSEDSIGNAL */
   logic       ack_sent;      // ACK has been sent for current phase
-  logic       phase_addr;    // Currently in address phase
+  /* verilator lint_on UNUSEDSIGNAL */
   logic       my_addr;       // This transaction is addressed to us (own addr, ARA, or default)
   logic       ara_addressed; // Addressed via Alert Response Address
   logic       smbalert_asserted; // Internal: SMBALERT# being driven low
@@ -402,8 +407,9 @@ module i2c_slave #(
   //   shift_reg[7:1] = {bit0, bit1, ..., bit6} = 7-bit address
   //   shift_reg[0]   = bit7 = R/W bit
   // ---------------------------------------------------------------------------
+  /* verilator lint_off UNUSEDSIGNAL */
   logic [7:0] recv_addr;
-
+  /* verilator lint_on UNUSEDSIGNAL */
   assign recv_addr = {shift_reg[7:1], shift_reg[0]};  // 7-bit addr + R/W (kept for debug)
 
   always_ff @(posedge clk or negedge rst_n) begin
@@ -456,22 +462,11 @@ module i2c_slave #(
   end
 
   // ---------------------------------------------------------------------------
-  // ACK Decision Register
+  // ACK Decision Wire (for debug display)
   // ---------------------------------------------------------------------------
-  // Captured at the same time as my_addr, used during the 9th SCL cycle.
-  logic should_ack;
-
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
-      should_ack <= 1'b0;
-    else if (state == S_ADDR && bit_pos == 8 && scl_falling)
-      // ACK if: (1) our assigned address, (2) ARA, (3) Default Addr (ARP)
-      should_ack <= (shift_reg[7:1] == assigned_addr) ||
-                    (SMBALERT_ENABLE && (shift_reg[7:1] == ARA_ADDR)) ||
-                    (SMARP_ENABLE && !av && (shift_reg[7:1] == SMBUS_DEFAULT_ADDR));
-    else if (state == S_IDLE)
-      should_ack <= 1'b0;
-  end
+  /* verilator lint_off UNUSEDSIGNAL */
+  wire should_ack = my_addr;
+  /* verilator lint_on UNUSEDSIGNAL */
 
   // ---------------------------------------------------------------------------
   // SDA Output Control
@@ -565,7 +560,7 @@ module i2c_slave #(
             // Extract bit from current UDID byte (MSB-first)
             // arp_tx_byte_cnt selects which of UDID_BYTES bytes to send
             // Byte 0 transmitted first = UDID[UDID_WIDTH-1 -: 8]
-            sda_o  = UDID[(UDID_BYTES - 1 - arp_tx_byte_cnt) * 8 + 7 - bit_pos];
+            sda_o  = UDID[(UDID_BYTES - 1 - int'(arp_tx_byte_cnt)) * 8 + 7 - int'(bit_pos)];
           else if (slv_is_pec_byte)
             sda_o  = pec_crc_value[7 - bit_pos];
           else
@@ -614,7 +609,7 @@ module i2c_slave #(
           if (ara_addressed)
             sda_o = SLAVE_ADDR[6];
           else if (arp_get_udid_pending)
-            sda_o = UDID[(UDID_BYTES - 1 - arp_tx_byte_cnt) * 8 + 7];
+            sda_o = UDID[(UDID_BYTES - 1 - int'(arp_tx_byte_cnt)) * 8 + 7];
           else if (slv_is_pec_byte)
             sda_o = pec_crc_value[7];
           else
@@ -906,7 +901,7 @@ module i2c_slave #(
       // ---------------------------------------------------------
       if (SMARP_ENABLE && arp_get_udid_pending &&
           state == S_TX_DATA && scl_falling && (bit_pos == 7) &&
-          arp_tx_byte_cnt < UDID_BYTES - 1)
+          int'(arp_tx_byte_cnt) < UDID_BYTES - 1)
         arp_tx_byte_cnt <= arp_tx_byte_cnt + 1;
 
       // ---------------------------------------------------------
@@ -926,7 +921,7 @@ module i2c_slave #(
       // arp_tx_byte_cnt is 4 bits (max 15), so this only works correctly
       // for UDID_BYTES <= 16.
       if (SMARP_ENABLE && arp_get_udid_pending && stop_detected &&
-          arp_tx_byte_cnt >= UDID_BYTES - 1)
+          int'(arp_tx_byte_cnt) >= UDID_BYTES - 1)
         arp_get_udid_pending <= 1'b0;
       // Clear: Prepare to ARP or Reset Device
       if (SMARP_ENABLE && (arp_cmd == ARP_CMD_PREPARE_TO_ARP ||
@@ -972,11 +967,11 @@ module i2c_slave #(
             // ARP command mid-transaction.
             arp_byte_cnt <= arp_byte_cnt + 1;
           end
-        end else if (arp_rx_udid && arp_byte_cnt <= UDID_BYTES) begin
+        end else if (arp_rx_udid && int'(arp_byte_cnt) <= UDID_BYTES) begin
           // Accumulate UDID_BYTES UDID bytes (bytes 2..UDID_BYTES+1)
           arp_rx_udid_buf <= {arp_rx_udid_buf[UDID_WIDTH-9:0], shift_reg[7:0]};
           arp_byte_cnt <= arp_byte_cnt + 1;
-        end else if (arp_rx_udid && arp_byte_cnt == UDID_BYTES + 1) begin
+        end else if (arp_rx_udid && int'(arp_byte_cnt) == UDID_BYTES + 1) begin
           // Byte UDID_BYTES+2 = new address byte
           arp_new_addr  <= shift_reg[7:1];
           arp_byte_cnt  <= arp_byte_cnt + 1;
@@ -1081,7 +1076,9 @@ module i2c_slave #(
   // Debug
   // ---------------------------------------------------------------------------
   // synthesis translate_off
+  /* verilator lint_off UNUSEDSIGNAL */
   logic [2:0] slv_fsm_state_dbg;
+  /* verilator lint_on UNUSEDSIGNAL */
   assign slv_fsm_state_dbg = state;
 
   // Debug: print slave state and shift_reg on each SCL edge

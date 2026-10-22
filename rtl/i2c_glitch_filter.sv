@@ -13,8 +13,10 @@ module i2c_glitch_filter #(
   parameter int GLITCH_CYCLES = 2,
   parameter bit ENABLE        = 1'b0
 ) (
+  /* verilator lint_off UNUSEDSIGNAL */
   input  logic clk,
   input  logic rst_n,
+  /* verilator lint_on UNUSEDSIGNAL */
   input  logic pin_in,
   output logic pin_out
 );

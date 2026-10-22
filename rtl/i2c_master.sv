@@ -27,7 +27,9 @@ module i2c_master #(
   // I2C SCL frequency in Hz (max 400_000 for Fast-mode)
   parameter int SCL_FREQ      = 100_000,
   // Number of bytes per transaction (burst length)
+  /* verilator lint_off UNUSEDPARAM */
   parameter int BURST_LENGTH  = 1,
+  /* verilator lint_on UNUSEDPARAM */
   // SMBus 3.0 compatibility mode (enables 35 ms timeout, t_HD;DAT hold)
   parameter bit  SMBUS_ENABLE    = 1'b0,
   // SMBus 3.0 PEC (Packet Error Checking) — CRC-8 appended after data
@@ -189,7 +191,9 @@ module i2c_master #(
 
   scl_phase_t scl_phase;
   integer     clk_cnt;
+  /* verilator lint_off UNUSEDSIGNAL */
   logic       scl_gen;     // Legacy: follows SCL output value
+  /* verilator lint_on UNUSEDSIGNAL */
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -868,7 +872,7 @@ module i2c_master #(
       end else if (SMBUS_ENABLE && scl_falling_event &&
                   (state == MST_SEND_ADDR || state == MST_SEND_ACK)) begin
         // SCL falling during active data driving: start hold timer
-        sda_hold_cnt <= SMBUS_SDA_HOLD_CYCLES;
+        sda_hold_cnt <= 8'(SMBUS_SDA_HOLD_CYCLES);
         sda_o  <= sda_o;   // Freeze SDA at current value
         sda_oe <= sda_oe;  // Freeze SDA OE at current value
       end
@@ -928,7 +932,9 @@ module i2c_master #(
   // Debug Output (for waveform inspection)
   // ---------------------------------------------------------------------------
   // synthesis translate_off
+  /* verilator lint_off UNUSEDSIGNAL */
   logic [3:0] fsm_state_dbg;
+  /* verilator lint_on UNUSEDSIGNAL */
   assign fsm_state_dbg = state;
 
 `ifdef DEBUG

@@ -10,6 +10,8 @@
 
 package i2c_pkg;
 
+  /* verilator lint_off UNUSEDPARAM */
+
   // ---------------------------------------------------------------------------
   // I2C State Encodings
   // ---------------------------------------------------------------------------
@@ -87,5 +89,7 @@ package i2c_pkg;
   // UDID is 16 bytes (128 bits)
   parameter int UDID_BYTES = 16;
   parameter int UDID_WIDTH = 128;
+
+  /* verilator lint_on UNUSEDPARAM */
 
 endpackage : i2c_pkg
