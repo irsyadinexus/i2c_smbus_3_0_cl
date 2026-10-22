@@ -1,3 +1,4 @@
+# Build and simulation outputs
 build/
 obj_dir/
 *.vcd
@@ -5,4 +6,13 @@ obj_dir/
 *.lxt2
 *.vpd
 *.vvp
+
+# Temporary and editor files
 *:Zone.Identifier
+*Zone.Identifier*
+.DS_Store
+*.swp
+*~
+
+# Local planning scratch / ledger
+.superpowers/

@@ -39,13 +39,13 @@ A synthesisable **I2C / SMBus 3.0 bus controller** implemented in SystemVerilog.
 
 ```
                          ┌─────────────────────────┐
-                         │       i2c_top            │
-                         │                          │
-  Host Interface ──────► │  ┌──────────┐            │
-  (Master)               │  │ I2C      │            │
-                         │  │ Master   │───┬───► SCL│──► to bus
+                         │       i2c_top           │
+                         │                         │
+  Host Interface ──────► │  ┌──────────┐           │
+  (Master)               │  │ I2C      │           │
+                         │  │ Master   │───┬──► SCL│──► to bus (open-drain)
                          │  └──────────┘   │       │
-                         │                 ├───► SDA│──► to bus
+                         │                 ├──► SDA│──► to bus (open-drain)
   Host Interface ──────► │  ┌──────────┐   │       │
   (Slave)                │  │ I2C      │   │       │
                          │  │ Slave    │───┘       │
@@ -57,13 +57,70 @@ A synthesisable **I2C / SMBus 3.0 bus controller** implemented in SystemVerilog.
 
 | Module | File | Description |
 |--------|------|-------------|
-| `i2c_pkg` | `rtl/i2c_pkg.sv` | Package with parameters, typedefs, and constants (incl. ARP command codes, UDID width) |
-| `smbus_pec` | `rtl/smbus_pec.sv` | SMBus 3.0 PEC CRC-8 accumulator, shared by master and slave |
-| `i2c_master` | `rtl/i2c_master.sv` | I2C Master controller (FSM-based) |
-| `i2c_slave` | `rtl/i2c_slave.sv` | I2C Slave controller (FSM-based) |
-| `i2c_top` | `rtl/i2c_top.sv` | Top-level integration with tri-state pads |
-| `i2c_top_verilator` | `rtl/i2c_top_verilator.sv` | Verilator-only variant using `logic` bus ports instead of `inout`, plus a `tb_sda_force_low` fault-injection input for arbitration testing |
-| `tb_i2c` | `tb/tb_i2c.sv` | Self-checking testbench |
+| `i2c_pkg` | `rtl/i2c_pkg.sv` | Package with timing constants, protocol typedefs, unified master & slave state enums, ARP command codes, and timescale declarations |
+| `smbus_pec` | `rtl/smbus_pec.sv` | SMBus 3.0 PEC CRC-8 accumulator ($C(x) = x^8 + x^2 + x^1 + 1$), shared by master and slave |
+| `i2c_glitch_filter` | `rtl/i2c_glitch_filter.sv` | Parameterized 50 ns digital spike suppression filter for SCL and SDA lines |
+| `i2c_master` | `rtl/i2c_master.sv` | I2C/SMBus Master controller with immediate arbitration abort, bidirectional PEC CRC-8, and hold-time pipeline |
+| `i2c_slave` | `rtl/i2c_slave.sv` | I2C/SMBus Slave controller with 7-bit addressing, ARP, ARA/SMBALERT#, read-side PEC, and clock stretching |
+| `i2c_top` | `rtl/i2c_top.sv` | Top-level integration module with glitch filtering and open-drain pad wiring |
+| `i2c_top_verilator` | `rtl/i2c_top_verilator.sv` | Verilator simulation wrapper using `logic` bus ports and testbench contention injection input |
+| `tb_i2c` | `tb/tb_i2c.sv` | Self-checking testbench for baseline 100 kHz I2C |
+
+---
+
+## Codebase Analysis & Engineering Audit
+
+An in-depth architectural audit and verification analysis of the codebase identified the following critical areas:
+
+### 1. Arbitration Contention & Back-off Mechanism
+- **Finding**: While `arbitration_lost` flag was sampled, the master FSM did not abort on loss; it continued toggling SCL through to STOP, which could corrupt another winning master's ongoing transaction.
+- **Scope Limitation**: Arbitration monitoring only checked `MST_SEND_ADDR`, leaving data byte transmissions (`MST_SEND_ACK` / data phase) vulnerable to undetected collisions.
+
+### 2. Bidirectional Packet Error Checking (PEC)
+- **Finding**: PEC was implemented unidirectionally for write transactions (`!rw`) only.
+- **Dead Logic**: `mst_pec_error` in `i2c_master.sv` was set only if a slave combinatorially NACKed a PEC byte. Per SMBus 3.0 specification, slaves verify PEC post-hoc at the STOP condition and do not NACK mid-byte. Consequently, master-side PEC verification was effectively dead code on read transactions.
+
+### 3. FSM Enum Decoupling & Timescale Header Inconsistency
+- **Finding**: `rtl/i2c_pkg.sv` defined a `slave_state_t` enum that was unused by `rtl/i2c_slave.sv`, which instead declared a local `slave_fsm_t`. Furthermore, `rtl/i2c_pkg.sv` lacked an explicit `` `timescale `` declaration, producing simulation timescale mismatches when compiled before other units.
+
+### 4. Input Noise Spike Immunity
+- **Finding**: The controller lacked digital glitch suppression on incoming `scl` and `sda` lines, which is required by I2C/SMBus standards (suppression of spikes $\le 50\,\text{ns}$).
+
+### 5. Verilator Lint & Variable Width Casts
+- **Finding**: Arithmetic indices in ARP UDID extract expressions caused implicit 32-bit width expansion warnings in Verilator, and `make lint` failed due to missing waivers for standard open-drain empty pins.
+
+---
+
+## Remediation & Fixing Results
+
+All identified findings were resolved systematically through Test-Driven Development (TDD):
+
+### 1. Master FSM Immediate Abort on Arbitration Loss (`rtl/i2c_master.sv`)
+- **Fix**: Updated master FSM to immediately transition to `MST_IDLE` on `arbitration_lost`, clearing `busy` and releasing SCL and SDA within 1 clock cycle.
+- **Hold Pipeline Flush**: Explicitly cleared `sda_hold_cnt <= 0` and `sda_oe <= 1'b0` on arbitration loss to eliminate residual bus driving.
+- **Clear Logic**: Latch `arbitration_lost` across the abort so host software can observe the error, and clear it cleanly on the next `start` pulse.
+- **Verification**: Verified via `tb_i2c_smbus.sv` Test 23 and `verilator/testbench.cpp` Test 7.
+
+### 2. Full-Transaction Arbitration Loss Detection (`rtl/i2c_master.sv`)
+- **Fix**: Expanded arbitration loss monitoring to cover both address transmission and data byte transmission (`state == MST_SEND_ADDR || state == MST_SEND_ACK`).
+- **Verification**: Added Test 24 to `tb/tb_i2c_smbus.sv`, injecting SDA collision during data phase transmission and verifying immediate abort to `MST_IDLE`.
+
+### 3. Package Enum Harmonization & Timescale Cleanup (`rtl/i2c_pkg.sv`, `rtl/i2c_slave.sv`)
+- **Fix**: Added unified `` `timescale 1ns / 1ps `` to `rtl/i2c_pkg.sv`. Standardized `slave_state_t` in `i2c_pkg.sv` and refactored `rtl/i2c_slave.sv` to consume package state definitions with backwards-compatible aliases.
+
+### 4. Full Bidirectional Master Read PEC Verification (`rtl/i2c_master.sv`, `rtl/i2c_slave.sv`)
+- **Fix (Master)**: Updated `last_byte` to calculate $N+1$ bytes on reads when `SMBUS_PEC_ENABLE` is active (`!(rw && is_reserved_addr)`). Captured received bytes into `u_pec`, verified CRC at read completion, and asserted `mst_pec_error` on CRC mismatch while preserving payload data in `data_rx`.
+- **Fix (Slave)**: Slave accumulates transmitted data bytes into its own `u_pec`, and automatically transmits `pec_crc_value` when the master requests a byte past the data length in PEC mode.
+- **Verification**: Added Test 25 to `tb/tb_i2c_smbus.sv` featuring both valid read PEC verification and negative mutation testing (corrupting received PEC byte and confirming `mst_pec_error` asserts).
+
+### 5. Parameterized 50 ns Digital Glitch Suppression Filter (`rtl/i2c_glitch_filter.sv`)
+- **Fix**: Created synthesizable digital filter module suppressing pulses narrower than `GLITCH_CYCLES` system clock periods (60 ns at 50 MHz $\ge 50\,\text{ns}$).
+- **Integration**: Integrated into `rtl/i2c_top.sv` with default bypass `ENABLE=0` for backward-compatible timing.
+- **Verification**: Verified via standalone unit test `tb/tb_i2c_glitch_filter.sv`.
+
+### 6. Zero-Warning Verilator Lint & Makefile Target (`Makefile`, RTL modules)
+- **Fix**: Explicitly cast ARP index operations to `int'()`, wrapped debug signals in lint directives, and enhanced the `make lint` target with standard waivers (`-Wall -Wno-fatal -Wno-PINCONNECTEMPTY -Wno-IMPORTSTAR -Wno-TIMESCALEMOD -Wno-VARHIDDEN`).
+- **Verification**: `make lint` passes with 0 errors and 0 unhandled warnings.
 
 ## Getting Started
 
