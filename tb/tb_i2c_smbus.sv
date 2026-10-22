@@ -1568,6 +1568,46 @@ module tb_i2c_smbus();
     end
 
     // -----------------------------------------------------------------------
+    // Test 24: Arbitration Loss During Data Phase
+    // -----------------------------------------------------------------------
+    $display("");
+    $display("============================================================");
+    $display("  Test 24: Arbitration Loss During Data Phase");
+    $display("============================================================");
+
+    begin
+      mst_addr      = SLAVE_ADDR;
+      mst_rw        = 1'b0;
+      mst_data_tx   = 8'h80; // MSB is 1
+      mst_num_bytes = 8'd1;
+      mst_start     = 1'b1;
+      wait_clks(1);
+      mst_start     = 1'b0;
+
+      @(posedge mst_busy);
+
+      // Wait until address phase is done and we enter data phase
+      wait (u_i2c_top.u_i2c_master.state == MST_SEND_ADDR &&
+            !u_i2c_top.u_i2c_master.addr_phase &&
+            u_i2c_top.u_i2c_master.sda_oe && u_i2c_top.u_i2c_master.sda_o);
+
+      // Force SDA low during data bit transmission
+      force sda = 1'b0;
+
+      @(posedge u_i2c_top.u_i2c_master.scl_rising_event);
+      wait_clks(4);
+
+      check_equal("Arbitration loss detected during data byte",
+                  1'b1, u_i2c_top.u_i2c_master.arbitration_lost);
+      check_equal("Master FSM returned to IDLE on data arb loss",
+                  MST_IDLE, u_i2c_top.u_i2c_master.state);
+      check_equal("Master busy released on data arb loss", 1'b0, mst_busy);
+
+      release sda;
+      wait_clks(5);
+    end
+
+    // -----------------------------------------------------------------------
     // End of tests
     // -----------------------------------------------------------------------
     $display("");

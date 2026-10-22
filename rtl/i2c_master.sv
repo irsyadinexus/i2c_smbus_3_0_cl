@@ -908,9 +908,9 @@ module i2c_master #(
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
       arbitration_lost <= 1'b0;
-    else if (state == MST_START)
+    else if (start)
       arbitration_lost <= 1'b0;
-    else if ((state == MST_SEND_ADDR) && scl_rising_event)
+    else if ((state == MST_SEND_ADDR || state == MST_SEND_ACK) && scl_rising_event)
       if (sda_oe && sda_o && !sda_i)
         arbitration_lost <= 1'b1;
   end
