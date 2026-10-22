@@ -234,6 +234,27 @@
   <td>Added <code>stop_detected → S_IDLE</code> transitions to S_ADDR and S_ACK_REF</td>
   <td>STOP-only recovery PASS (both freqs)</td>
 </tr>
+<tr>
+  <td>7</td>
+  <td><strong>Arbitration loss back-off</strong> — Master continued driving SCL and holding busy after losing bus arbitration</td>
+  <td><code>i2c_master.sv</code></td>
+  <td>Immediately abort to <code>MST_IDLE</code>, release busy and SCL/SDA within 1 cycle; detect during address and data phase</td>
+  <td>Tests 23 &amp; 24, Verilator Test 7 PASS</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><strong>Master Read PEC Verification</strong> — Master only supported PEC on write (!rw); read-side PEC was not requested or verified</td>
+  <td><code>i2c_master.sv</code>, <code>i2c_slave.sv</code></td>
+  <td>Implemented read-side PEC byte accumulation, slave transmission, and master CRC check triggering <code>mst_pec_error</code></td>
+  <td>Test 25 (positive &amp; negative mutation) PASS</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><strong>Digital Glitch Suppression</strong> — Spurious noise spikes on SCL/SDA could corrupt state machines</td>
+  <td><code>i2c_glitch_filter.sv</code></td>
+  <td>Added parameterized 50 ns digital spike suppression filter module and integration in top wrapper</td>
+  <td>tb_i2c_glitch_filter PASS</td>
+</tr>
 </table>
 
 <!-- ========================================================================= -->
@@ -273,12 +294,10 @@
 
 <h3>5.3 Coverage Gaps (Not Yet Tested)</h3>
 <ul>
-<li><strong>Arbitration lost</strong> — multi-master scenario not yet simulated</li>
 <li><strong>10-bit addressing</strong> — controller uses 7-bit only</li>
 <li><strong>Fast-mode Plus (1 MHz)</strong> — not required per spec</li>
-<li><strong>Random data/address</strong> — all tests use deterministic patterns</li>
+<li><strong>Random data/address</strong> — covered in Tests 19-22; extended test profiles optional</li>
 <li><strong>Concurrent TX/RX</strong> — slave TX and RX not active simultaneously in one transaction</li>
-<li><strong>Spurious START/STOP glitch rejection</strong> — glitch filtering not implemented</li>
 </ul>
 
 <!-- ========================================================================= -->

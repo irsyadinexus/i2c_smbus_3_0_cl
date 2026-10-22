@@ -12,8 +12,10 @@ A synthesisable **I2C / SMBus 3.0 bus controller** implemented in SystemVerilog.
 - **Clock stretching** support (real slave-driven, not just forced)
 - **ACK/NACK** detection and error reporting
 - **Arbitration loss** detection (address-byte collisions)
-- **SMBus 3.0 PEC** (Packet Error Checking — CRC-8) generation, cross-checked against an independent reference implementation
+- **SMBus 3.0 PEC** (Packet Error Checking — CRC-8) generation on writes and verification on reads, cross-checked against an independent reference implementation
 - **SMBus 3.0 35 ms SCL-low timeout** detection, sticky until genuinely resolved (does not self-clear as a side effect of the FSM returning to idle)
+- **Immediate FSM Abort on Arbitration Loss**: Master immediately transitions to `MST_IDLE` and releases SCL/SDA within 1 cycle upon losing arbitration during either address or data phase
+- **Digital Glitch Suppression Filter**: Optional 50 ns digital spike suppression filter (`rtl/i2c_glitch_filter.sv`) parameterizable via `GLITCH_FILTER_ENABLE` and `GLITCH_FILTER_CYCLES`
 - **Configurable SCL frequency** via an asymmetric system clock divider (meets I2C `t_LOW` at both 100 kHz and 400 kHz)
 
 ### I2C Slave
@@ -341,17 +343,9 @@ standalone regression for stretching byte 2+ of a multi-byte read — see
   edge cases with more consecutive stretches or more prior iterations in the
   same simulation, unrelated to the RTL itself. `tb_i2c_smbus_stretch_timeout.sv`'s
   read-burst test therefore does not deliberately stretch any byte.
-- **`mst_pec_error` (master) is dead code.** Its set condition depends on the
-  slave NACKing a bad PEC byte, but the slave only ever detects a PEC
-  mismatch post-hoc via CRC at STOP — it never NACKs because of PEC. PEC
-  correctness is validated through other means (Test 21 cross-checks the
-  master's computed PEC against an independent reference CRC-8, and checks
-  the slave's own `pec_error`).
-- **`arbitration_lost` has narrow test coverage.** The dedicated arbitration
-  tests (`tb_i2c_smbus.sv` Test 23, and `make veri-sim`'s Test 7) only cover
-  a second master colliding on the address byte. No test exercises
-  arbitration loss mid-transaction (e.g. during a data byte) or its
-  interaction with clock stretching.
+- **Master Read PEC Verification**: Full bidirectional SMBus 3.0 PEC support is implemented. The master calculates PEC on transmitted data and verifies received PEC bytes on read transactions (asserting `mst_pec_error` on CRC mismatch). Both positive and negative (corrupted PEC) checks are verified in Test 25 of `tb/tb_i2c_smbus.sv`.
+- **Arbitration Loss Immediate Abort & Data Phase Coverage**: The master FSM monitors SDA contention during both address and data byte transmission (`MST_SEND_ADDR` and `MST_SEND_ACK`). Upon collision, the master immediately clears `busy`, releases SCL and SDA output enables within 1 cycle, and returns to `MST_IDLE` (verified in `tb/tb_i2c_smbus.sv` Tests 23 & 24 and `verilator/testbench.cpp` Test 7).
+- **Digital Spike Suppression Glitch Filter**: A synthesizable digital filter (`rtl/i2c_glitch_filter.sv`) suppresses SCL/SDA pulses shorter than `GLITCH_FILTER_CYCLES` clock periods (nominally 50 ns), verified with dedicated unit tests in `tb/tb_i2c_glitch_filter.sv`.
 
 ## Synthesis
 
