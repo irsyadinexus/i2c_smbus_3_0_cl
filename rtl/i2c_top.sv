@@ -177,6 +177,7 @@ module i2c_top #(
     .tx_data          (slv_tx_data),
     .tx_valid         (slv_tx_valid),
     .tx_ready         (slv_tx_ready),
+    .tx_num_bytes     (mst_num_bytes),
     .rx_data          (slv_rx_data),
     .rx_valid         (slv_rx_valid),
     .rx_ready         (slv_rx_ready),

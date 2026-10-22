@@ -56,6 +56,8 @@ module i2c_slave #(
   input  logic       tx_valid,
   // TX ready (slave has consumed tx_data)
   output logic       tx_ready,
+  // Expected transfer length in bytes (defaults to 1 for standard byte reads)
+  input  logic [7:0] tx_num_bytes,
   // Data received from master (for writes)
   output logic [7:0] rx_data,
   // RX data valid (new data received from master)
@@ -219,6 +221,20 @@ module i2c_slave #(
   logic       own_arp_write;       // Addressed via own assigned address, write direction
                                     // (used for directed ARP commands: Get UDID Directed,
                                     // Reset Device Directed — SMBus 3.0 section 4.9)
+
+  // Byte counter for normal slave transmissions (for read-side PEC handling)
+  logic [7:0] slv_tx_byte_cnt;
+  wire slv_is_pec_byte = SMBUS_PEC_ENABLE && dir_rw && !ara_addressed && !arp_get_udid_pending &&
+                         (slv_tx_byte_cnt >= (tx_num_bytes > 0 ? tx_num_bytes : 8'd1));
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+      slv_tx_byte_cnt <= '0;
+    else if (start_detected || (state == S_IDLE))
+      slv_tx_byte_cnt <= '0;
+    else if (state == S_TX_DATA && bit_pos == 8 && scl_falling)
+      slv_tx_byte_cnt <= slv_tx_byte_cnt + 8'd1;
+  end
 
   // ---------------------------------------------------------------------------
   // Main Slave State Machine (uses package slave_state_t)
@@ -550,6 +566,8 @@ module i2c_slave #(
             // arp_tx_byte_cnt selects which of UDID_BYTES bytes to send
             // Byte 0 transmitted first = UDID[UDID_WIDTH-1 -: 8]
             sda_o  = UDID[(UDID_BYTES - 1 - arp_tx_byte_cnt) * 8 + 7 - bit_pos];
+          else if (slv_is_pec_byte)
+            sda_o  = pec_crc_value[7 - bit_pos];
           else
             sda_o  = tx_data[7 - bit_pos];
           sda_oe = 1'b1;
@@ -597,6 +615,8 @@ module i2c_slave #(
             sda_o = SLAVE_ADDR[6];
           else if (arp_get_udid_pending)
             sda_o = UDID[(UDID_BYTES - 1 - arp_tx_byte_cnt) * 8 + 7];
+          else if (slv_is_pec_byte)
+            sda_o = pec_crc_value[7];
           else
             sda_o = tx_data[7];
           sda_oe = 1'b1;
@@ -644,7 +664,7 @@ module i2c_slave #(
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
       tx_ready <= 1'b0;
-    else if (state == S_TX_DATA && bit_pos == 8 && scl_falling)
+    else if (state == S_TX_DATA && bit_pos == 8 && scl_falling && !slv_is_pec_byte)
       tx_ready <= 1'b1;  // Previous byte sent, ready for next
     else if (tx_valid)
       tx_ready <= 1'b0;  // Data loaded
@@ -800,7 +820,8 @@ module i2c_slave #(
       // edge — the same timing shape the write-side (RX) stretch above
       // already uses successfully at its own analogous boundary.
       if (state == S_TX_DATA && scl_falling && bit_pos == 8 && dir_rw)
-        if (!tx_valid && !arp_get_udid_pending && !ara_addressed)
+        if (!tx_valid && !arp_get_udid_pending && !ara_addressed &&
+            !(SMBUS_PEC_ENABLE && (slv_tx_byte_cnt + 8'd1 >= (tx_num_bytes > 0 ? tx_num_bytes : 8'd1))))
           stretch_active <= 1'b1;  // Before subsequent TX bytes (needs user data)
 
       // --- Release conditions ---
@@ -1029,6 +1050,12 @@ module i2c_slave #(
         if (state == S_RX_DATA && bit_pos == 8 && scl_falling) begin
           pec_data_valid <= 1'b1;
           pec_data_byte  <= shift_reg[7:0];
+        end
+        // Feed data bytes transmitted in read mode
+        if (state == S_TX_DATA && bit_pos == 8 && scl_falling && dir_rw &&
+            !ara_addressed && !arp_get_udid_pending && !slv_is_pec_byte) begin
+          pec_data_valid <= 1'b1;
+          pec_data_byte  <= tx_data;
         end
       end
     end

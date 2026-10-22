@@ -1608,6 +1608,54 @@ module tb_i2c_smbus();
     end
 
     // -----------------------------------------------------------------------
+    // Test 25: SMBus Master Read with PEC Verification
+    // -----------------------------------------------------------------------
+    $display("");
+    $display("============================================================");
+    $display("  Test 25: SMBus Master Read with PEC Verification");
+    $display("============================================================");
+
+    begin
+      // Pre-load slave TX data
+      slv_tx_data  = 8'h5A;
+      slv_tx_valid = 1'b1;
+
+      // Start read with PEC enabled
+      mst_addr      = SLAVE_ADDR;
+      mst_rw        = 1'b1; // Read
+      mst_num_bytes = 8'd1; // 1 data byte (+ 1 PEC byte)
+      mst_start     = 1'b1;
+      wait_clks(1);
+      mst_start     = 1'b0;
+
+      wait(mst_done);
+      wait_clks(5);
+
+      check_equal("Master read correct data byte", 8'h5A, mst_data_rx);
+      check_equal("Master verified PEC CRC (no pec_error)", 1'b0, mst_pec_error);
+
+      // --- Negative: corrupt the slave's PEC byte and confirm master detects error ---
+      slv_tx_data   = 8'h5A;
+      slv_tx_valid  = 1'b1;
+      mst_addr      = SLAVE_ADDR;
+      mst_rw        = 1'b1;
+      mst_num_bytes = 8'd1;
+      mst_start     = 1'b1;
+      wait_clks(1);
+      mst_start     = 1'b0;
+
+      // Wait for master to read the data byte and proceed to PEC byte
+      wait (u_i2c_top.u_i2c_master.state == MST_READ_DATA &&
+            u_i2c_top.u_i2c_master.byte_cnt == 2);
+      force u_i2c_top.u_i2c_master.shift_reg = 8'hFF;
+      wait(mst_done);
+      wait_clks(5);
+      release u_i2c_top.u_i2c_master.shift_reg;
+
+      check_equal("Master detected PEC error on corrupted PEC", 1'b1, mst_pec_error);
+    end
+
+    // -----------------------------------------------------------------------
     // End of tests
     // -----------------------------------------------------------------------
     $display("");

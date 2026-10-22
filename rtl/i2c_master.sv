@@ -544,13 +544,12 @@ module i2c_master #(
   end
 
   assign last_bit  = (bit_cnt == 7);
-  // PEC adds one extra byte (the CRC) AFTER all data bytes, but only for
-  // WRITE transactions (!rw). Reads do not append PEC in this implementation.
-  // last_byte comparison uses byte_cnt BEFORE increment.
-  // byte_cnt includes the address byte as count 0.
-  // For writes with PEC: total bytes = num_data_bytes + 1 (PEC)
-  // For reads or no PEC:       total bytes = num_data_bytes
-  assign last_byte = (byte_cnt >= num_bytes + ((SMBUS_PEC_ENABLE && !rw) ? 1 : 0));
+  // PEC adds one extra byte (the CRC) AFTER all data bytes.
+  // For standard SMBus, Alert Response Address (0x0C) and ARP Default Address (0x61)
+  // are special control transfers that do not append PEC on reads.
+  wire is_reserved_addr = (addr == 7'h0c || addr == 7'h61);
+  assign last_byte = (byte_cnt >= int'(num_bytes) + ((SMBUS_PEC_ENABLE && !(rw && is_reserved_addr)) ? 1 : 0));
+  wire mst_is_pec_byte = SMBUS_PEC_ENABLE && rw && !is_reserved_addr && (byte_cnt > int'(num_bytes));
 
   // ---------------------------------------------------------------------------
   // SMBus PEC CRC-8 Instance
@@ -635,19 +634,28 @@ module i2c_master #(
           pec_data_valid <= 1'b1;
           pec_data_byte  <= data_tx;
         end
+        // Feed received bytes on read to CRC accumulator
+        else if (SMBUS_PEC_ENABLE && state == MST_READ_DATA && scl_falling_event && last_bit && rw) begin
+          pec_data_valid <= 1'b1;
+          pec_data_byte  <= shift_reg;
+        end
       end
     end
   end
 
-  // PEC error: detected when slave NACKs the PEC byte
+  // PEC error detection:
+  // - On write (!rw): slave NACKs the PEC byte
+  // - On read (rw): master receives PEC byte, verified if pec_value != 0x00
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
       pec_error <= 1'b0;
-    else if (SMBUS_PEC_ENABLE && state == MST_WAIT_ACK && scl_rising_event &&
-             byte_cnt >= num_bytes && !addr_phase)
-      pec_error <= sda_i;  // NACK on PEC byte = PEC error
-    else if (state == MST_IDLE)
+    else if (state == MST_START)
       pec_error <= 1'b0;
+    else if (SMBUS_PEC_ENABLE && rw && state == MST_SEND_ACK && scl_rising_event && mst_is_pec_byte)
+      pec_error <= (pec_value != 8'h00);
+    else if (SMBUS_PEC_ENABLE && !rw && state == MST_WAIT_ACK && scl_rising_event &&
+             byte_cnt >= int'(num_bytes) && !addr_phase)
+      pec_error <= sda_i;  // NACK on PEC byte = slave rejected PEC
   end
 
   // ---------------------------------------------------------------------------
@@ -679,9 +687,10 @@ module i2c_master #(
       else if (state == MST_READ_DATA && scl_rising_event) begin
         shift_reg <= {shift_reg[6:0], sda_i};
       end
-      // Capture received data at end of byte
+      // Capture received data at end of byte (preserve data_rx on read PEC byte)
       else if (state == MST_SEND_ACK && scl_falling_event) begin
-        data_rx <= shift_reg;
+        if (!mst_is_pec_byte)
+          data_rx <= shift_reg;
       end
     end
   end
