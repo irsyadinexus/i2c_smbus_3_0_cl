@@ -1,0 +1,8 @@
+build/
+obj_dir/
+*.vcd
+*.lxt
+*.lxt2
+*.vpd
+*.vvp
+*:Zone.Identifier

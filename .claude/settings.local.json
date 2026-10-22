@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /tmp/i2cbuild)",
+      "Bash(iverilog -g2012 -Wall -Winfloop -I rtl -I tb -o /tmp/i2cbuild/tb_i2c.vvp rtl/*.sv tb/tb_i2c.sv)"
+    ]
+  }
+}
