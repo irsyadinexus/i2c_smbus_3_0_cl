@@ -1546,17 +1546,24 @@ module tb_i2c_smbus();
       // observes the transition, and its own result becomes visible a
       // cycle after that. Two clocks of margin covers both hops.
       @(posedge u_i2c_top.u_i2c_master.scl_rising_event);
-      wait_clks(2);
+      wait_clks(4);
 
       check_equal("Arbitration loss detected (u_i2c_master.arbitration_lost)",
                   1'b1, u_i2c_top.u_i2c_master.arbitration_lost);
       check_equal("mst_arb_lost output reflects the detection", 1'b1, mst_arb_lost);
 
+      // Verify immediate back-off and bus release
+      check_equal("Master FSM returned to IDLE on arbitration loss",
+                  MST_IDLE, u_i2c_top.u_i2c_master.state);
+      check_equal("Master busy released on arbitration loss", 1'b0, mst_busy);
+      check_equal("Master SCL released on arbitration loss", 1'b0, u_i2c_top.u_i2c_master.scl_oe);
+      check_equal("Master SDA released on arbitration loss", 1'b0, u_i2c_top.u_i2c_master.sda_oe);
+
       release sda;
 
       // Drain the (deliberately corrupted) transaction so it doesn't
       // interfere with anything after this test.
-      wait(mst_done || mst_ack_error || mst_smbus_timeout);
+      wait(mst_done || mst_ack_error || mst_smbus_timeout || !mst_busy);
       wait_clks(5);
     end
 

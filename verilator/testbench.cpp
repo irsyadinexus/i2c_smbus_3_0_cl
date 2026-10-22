@@ -257,8 +257,9 @@ int main(int argc, char **argv) {
         top->tb_sda_force_low = 0;
     }
 
-    // Drain the deliberately-corrupted transaction before moving on.
-    wait_mst_done();
+    // Verify master has aborted and released the bus immediately
+    check("Master released busy on arb lost", top->mst_busy == 0);
+    check("Master released bus on arb lost (scl_o=1)", top->scl_o == 1);
 
     // -------- Summary --------
     printf("\n");

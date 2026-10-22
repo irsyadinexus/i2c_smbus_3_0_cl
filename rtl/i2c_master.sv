@@ -368,8 +368,8 @@ module i2c_master #(
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
       state <= MST_IDLE;
-    else if (reset || (SMBUS_ENABLE && smbus_timeout))
-      state <= MST_IDLE;  // Timeout: release bus immediately
+    else if (reset || (SMBUS_ENABLE && smbus_timeout) || arbitration_lost)
+      state <= MST_IDLE;  // Immediate abort on reset, timeout, or arbitration loss
     else
       state <= next_state;
   end
@@ -704,7 +704,11 @@ module i2c_master #(
     sda_o_cmb  = 1'b1;
     sda_oe_cmb = 1'b0;
 
-    case (state)
+    if (arbitration_lost) begin
+      scl_oe     = 1'b0;
+      sda_oe_cmb = 1'b0;
+    end else begin
+      case (state)
 
       // -----------------------------------------------------------------------
       // IDLE: Release bus
@@ -815,6 +819,7 @@ module i2c_master #(
         sda_oe_cmb = 1'b0;
       end
     endcase
+    end
   end
 
   // ---------------------------------------------------------------------------
@@ -842,7 +847,11 @@ module i2c_master #(
       sda_o  <= sda_o_cmb;
       sda_oe <= sda_oe_cmb;
 
-      if (SMBUS_ENABLE && sda_hold_cnt > 0) begin
+      if (arbitration_lost) begin
+        sda_hold_cnt <= 0;
+        sda_o  <= 1'b1;
+        sda_oe <= 1'b0;
+      end else if (SMBUS_ENABLE && sda_hold_cnt > 0) begin
         // Hold active: keep previous output values, decrement counter
         sda_hold_cnt <= sda_hold_cnt - 1;
         sda_o  <= sda_o;   // Retain previous
@@ -867,7 +876,7 @@ module i2c_master #(
       busy <= 1'b0;
     else if (state == MST_START)
       busy <= 1'b1;
-    else if (state == MST_IDLE)
+    else if (state == MST_IDLE || arbitration_lost)
       busy <= 1'b0;
   end
 
@@ -899,7 +908,7 @@ module i2c_master #(
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
       arbitration_lost <= 1'b0;
-    else if (state == MST_IDLE)
+    else if (state == MST_START)
       arbitration_lost <= 1'b0;
     else if ((state == MST_SEND_ADDR) && scl_rising_event)
       if (sda_oe && sda_o && !sda_i)
