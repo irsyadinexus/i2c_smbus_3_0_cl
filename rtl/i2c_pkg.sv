@@ -6,6 +6,8 @@
 // slave controllers. It also defines I2C protocol timing constants.
 //==============================================================================
 
+`timescale 1ns / 1ps
+
 package i2c_pkg;
 
   // ---------------------------------------------------------------------------
@@ -16,25 +18,22 @@ package i2c_pkg;
   typedef enum logic [3:0] {
     MST_IDLE       = 4'b0000,
     MST_START      = 4'b0001,
-    MST_SEND_ADDR  = 4'b0010,
+    MST_SEND_ADDR  = 4'b0010, // Used for both Address and Data byte transmission
     MST_WAIT_ACK   = 4'b0011,
-    MST_SEND_DATA  = 4'b0100,
-    MST_WAIT_DATA  = 4'b0101,
     MST_READ_DATA  = 4'b0110,
     MST_SEND_ACK   = 4'b0111,
-    MST_STOP_PREP  = 4'b1000,
     MST_STOP       = 4'b1001,
     MST_WAIT_STOP  = 4'b1010
   } master_state_t;
 
-  // Slave FSM States
+  // Slave FSM States (standardized)
   typedef enum logic [2:0] {
-    SLV_IDLE       = 3'b000,
-    SLV_GET_ADDR   = 3'b001,
-    SLV_ACK_ADDR   = 3'b010,
-    SLV_RECV_DATA  = 3'b011,
-    SLV_SEND_DATA  = 3'b100,
-    SLV_ACK_DATA   = 3'b101
+    SLV_IDLE       = 3'h0,
+    SLV_ADDR       = 3'h1,
+    SLV_ACK_REF    = 3'h2,
+    SLV_TX_DATA    = 3'h3,
+    SLV_RX_DATA    = 3'h4,
+    SLV_ACK_PHASE  = 3'h5
   } slave_state_t;
 
   // ---------------------------------------------------------------------------

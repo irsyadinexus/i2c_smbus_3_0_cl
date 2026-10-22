@@ -221,18 +221,17 @@ module i2c_slave #(
                                     // Reset Device Directed — SMBus 3.0 section 4.9)
 
   // ---------------------------------------------------------------------------
-  // Main Slave State Machine
+  // Main Slave State Machine (uses package slave_state_t)
   // ---------------------------------------------------------------------------
-  typedef enum logic [2:0] {
-    S_IDLE       = 3'h0,
-    S_ADDR       = 3'h1,
-    S_ACK_REF    = 3'h2,  // ACK reference (decision point)
-    S_TX_DATA    = 3'h3,  // Transmitting data to master
-    S_RX_DATA    = 3'h4,  // Receiving data from master
-    S_ACK_PHASE  = 3'h5   // ACK after data byte
-  } slave_fsm_t;
+  slave_state_t state, next_state;
 
-  slave_fsm_t state, next_state;
+  // Backwards-compatible aliases for internal states
+  localparam slave_state_t S_IDLE      = SLV_IDLE;
+  localparam slave_state_t S_ADDR      = SLV_ADDR;
+  localparam slave_state_t S_ACK_REF   = SLV_ACK_REF;
+  localparam slave_state_t S_TX_DATA   = SLV_TX_DATA;
+  localparam slave_state_t S_RX_DATA   = SLV_RX_DATA;
+  localparam slave_state_t S_ACK_PHASE = SLV_ACK_PHASE;
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
