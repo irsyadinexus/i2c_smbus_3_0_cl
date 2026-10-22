@@ -29,7 +29,10 @@ module i2c_top #(
   parameter bit         SMARP_ENABLE    = 1'b0,
   parameter logic [127:0] UDID = 128'h00000000_00000000_00000000_00000000,
   // Slave clock stretching
-  parameter bit         SLV_STRETCH_ENABLE = 1'b0
+  parameter bit         SLV_STRETCH_ENABLE = 1'b0,
+  // Digital spike suppression glitch filter
+  parameter bit         GLITCH_FILTER_ENABLE = 1'b0,
+  parameter int         GLITCH_FILTER_CYCLES = 3
 ) (
   // ---------------------------------------------------------------------------
   // System Interface
@@ -111,13 +114,37 @@ module i2c_top #(
   wire scl_driven_low = (scl_oe_mst && !scl_o_mst) ||
                         (scl_oe_slv && !scl_o_slv);
   assign scl   = scl_driven_low ? 1'b0 : 1'bz;
-  assign scl_i = scl;
 
   // SDA pad: true open-drain wire-AND (same as SCL)
   wire sda_driven_low = (sda_oe_mst && !sda_o_mst) ||
                         (sda_oe_slv && !sda_o_slv);
   assign sda   = sda_driven_low ? 1'b0 : 1'bz;
-  assign sda_i = sda;
+
+  // Digital spike suppression glitch filters on incoming lines
+  wire scl_filtered, sda_filtered;
+
+  i2c_glitch_filter #(
+    .GLITCH_CYCLES (GLITCH_FILTER_CYCLES),
+    .ENABLE        (GLITCH_FILTER_ENABLE)
+  ) u_filter_scl (
+    .clk     (clk),
+    .rst_n   (rst_n),
+    .pin_in  (scl),
+    .pin_out (scl_filtered)
+  );
+
+  i2c_glitch_filter #(
+    .GLITCH_CYCLES (GLITCH_FILTER_CYCLES),
+    .ENABLE        (GLITCH_FILTER_ENABLE)
+  ) u_filter_sda (
+    .clk     (clk),
+    .rst_n   (rst_n),
+    .pin_in  (sda),
+    .pin_out (sda_filtered)
+  );
+
+  assign scl_i = scl_filtered;
+  assign sda_i = sda_filtered;
 
   // Inputs for master (from bus)
   assign scl_i_mst = scl_i;

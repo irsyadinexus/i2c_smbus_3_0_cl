@@ -35,9 +35,10 @@ VERI_OBJ    := obj_dir
 # RTL files in COMPILATION ORDER (package FIRST, then dependents)
 PKG_FILE    := $(RTL_DIR)/i2c_pkg.sv
 PEC_FILE    := $(RTL_DIR)/smbus_pec.sv
+GLITCH_FILE := $(RTL_DIR)/i2c_glitch_filter.sv
 RTL_CORE    := $(RTL_DIR)/i2c_master.sv $(RTL_DIR)/i2c_slave.sv
 TOP_FILE    := $(RTL_DIR)/i2c_top.sv
-RTL_ORDERED := $(PKG_FILE) $(PEC_FILE) $(RTL_CORE) $(TOP_FILE)
+RTL_ORDERED := $(PKG_FILE) $(PEC_FILE) $(GLITCH_FILE) $(RTL_CORE) $(TOP_FILE)
 
 # Compiler flags
 VLOG_FLAGS  := -g2012 -Wall -Winfloop
@@ -147,7 +148,7 @@ veri-sim: $(RTL_ORDERED) $(VERI_DIR)/testbench.cpp
 		-Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-SYNCASYNCNET \
 		-Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-fatal \
 		-CFLAGS "-std=c++17 -O0 -g" \
-		$(PKG_FILE) $(PEC_FILE) $(RTL_CORE) $(TOP_FILE) \
+		$(PKG_FILE) $(PEC_FILE) $(GLITCH_FILE) $(RTL_CORE) $(TOP_FILE) \
 		$(RTL_DIR)/i2c_top_verilator.sv \
 		$(VERI_DIR)/testbench.cpp 2>&1 | tail -10
 	@echo "$(GREEN)Verilator build complete. Running simulation...$(RESET)"
